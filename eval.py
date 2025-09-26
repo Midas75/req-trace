@@ -1,9 +1,6 @@
-from conf_minilm import half, use_gtk_cosine, eval_topk
+from conf_minilm import half, use_gtk_cosine, sim_threshold
 from sentence_transformers import (
     SentenceTransformer,
-    evaluation,
-    SentenceTransformerTrainer,
-    SentenceTransformerTrainingArguments,
 )
 from sentence_transformers.util import pairwise_cos_sim
 from dataset import from_pickle
@@ -11,6 +8,8 @@ from gtk_loss import pairwise_gtk_cos_sim
 from tqdm import tqdm
 from torch import Tensor
 import os
+
+sim_threshold = sim_threshold
 
 
 def clear_files_only(folder_path):
@@ -21,7 +20,7 @@ def clear_files_only(folder_path):
 
 comp = pairwise_gtk_cos_sim if use_gtk_cosine else pairwise_cos_sim
 model = SentenceTransformer(
-    f"trained_minilm{'_gtcs' if use_gtk_cosine else ''}/checkpoint-2670",
+    f"trained_dynamic_minilm{'_gtcs' if use_gtk_cosine else ''}",
     # f"trained_qwen3/checkpoint-1214",
     # "sentence-transformers/all-MiniLM-L6-v2",
     model_kwargs={
@@ -49,30 +48,38 @@ for i in range(len(valid_tuples[0])):
     if label > 0.5:
         eval_data[req].add(code)
 false_counter = 0
-clear_files_only("false")
+clear_files_only("false_case")
 for k, vs in tqdm(eval_data.items()):
     true_code += len(vs)
     kemb = model.encode(k, convert_to_numpy=True)
     vcs = list[tuple[float, str]]()
     for codek, codeemb in vembs.items():
-        c = comp([kemb], [codeemb])
-        vcs.append((float(c), codek))
-    sorted_vcs = sorted(vcs, key=lambda x: x[0], reverse=True)
-    for i in range(0, min(eval_topk, len(vs))):
-        retrieved += 1
-        if sorted_vcs[i][1] in vs:
+        c = float(comp([kemb], [codeemb]))
+        need_save = False
+        if c > sim_threshold and codek in vs:
             true_relevant += 1
-        else:
-            if True:
-                false_counter += 1
-                f = open(f"false/false_{false_counter}.txt", "w")
-                f.write(
-                    "does the requirement have relation with the code? Answer me in Chinese\n\n"
-                )
-                f.write(str(sorted_vcs[i][0]))
-                f.write("\n######################\n")
-                f.write(sorted_vcs[i][1])
-                f.write("\n######################\n" + k)
+            retrieved += 1
+        elif c > sim_threshold and codek not in vs:
             false_relevant += 1
-print(f"Precision: {true_relevant}/{retrieved} = {true_relevant/retrieved*100:.2f}%")
-print(f"Recall: {true_relevant}/{true_code} = {true_relevant/true_code*100:.2f}%")
+            false_counter += 1
+            retrieved += 1
+            need_save = True
+        elif c < sim_threshold and codek in vs:
+            false_counter += 1
+            need_save += 1
+        if need_save:
+            f = open(f"false_case/false_{false_counter}.txt", "w")
+            f.write(
+                "does the requirement have relation with the code? Answer me in Chinese\n\n"
+            )
+            f.write(str(c))
+            f.write("\n######################\n")
+            f.write(codek)
+            f.write("\n######################\n" + k)
+precision = true_relevant / retrieved
+recall = true_relevant / true_code
+f1_score = 2 * (precision * recall) / (precision + recall)
+
+print(f"Precision: {true_relevant}/{retrieved} = {precision*100:.2f}%")
+print(f"Recall: {true_relevant}/{true_code} = {recall*100:.2f}%")
+print(f"F1-Score: {f1_score*100:.2f}%")

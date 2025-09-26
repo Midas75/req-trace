@@ -57,7 +57,7 @@ else:
         batch_size=batch_size,
     )
 train_args = SentenceTransformerTrainingArguments(
-    output_dir="./trained_minilm" + ("_gtcs" if use_gtk_cosine else ""),
+    output_dir="./static_trained_minilm" + ("_gtcs" if use_gtk_cosine else ""),
     num_train_epochs=epochs,
     per_device_train_batch_size=batch_size,
     per_device_eval_batch_size=batch_size,

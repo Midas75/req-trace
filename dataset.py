@@ -411,11 +411,34 @@ def shuffle_split(
     return train, (valid_s1, valid_s2, valid_score)
 
 
-def translate_smos():
-    pass
+def to_req_code_matrix(
+    input_examples: list[InputExample],
+) -> dict[str, dict[str, float]]:
+    all_code_set = set[str]()
+    result = dict[str, dict[str, float]]()
+    for ie in tqdm(input_examples):
+        all_code_set.add(ie.texts[1])
+    for ie in tqdm(input_examples):
+        if ie.texts[0] not in result:
+            result.setdefault(ie.texts[0], dict[str, float]())
+            for c in all_code_set:
+                result[ie.texts[0]][c] = 0
+    for ie in tqdm(input_examples):
+        result[ie.texts[0]][ie.texts[1]] = ie.label
+    return result
 
 
 if __name__ == "__main__":
+    # data = (
+    #     load_smos(False)
+    #     + load_itrust(False)
+    #     + load_libest_code(False)
+    #     + load_etour(False)
+    #     + load_ebt_code(False)
+    #     + load_albergate(False)
+    # )
+    # rcm = to_req_code_matrix(data)
+    # print(len(rcm), len(next(iter(rcm.items()))[1]))
     neg_ratio = 4
     data = (
         load_smos(neg_ratio=neg_ratio)
