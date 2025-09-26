@@ -33,7 +33,7 @@ model = SentenceTransformer(
     model_kwargs={"dtype": "half" if half else None},
     tokenizer_kwargs={"padding_side": "left"},
 )
-max_neg_ratio: float = 4
+max_neg_ratio: float = 1
 model.gradient_checkpointing_enable()
 train_examples, valid_tuples = from_pickle()
 rc_matrix = to_req_code_matrix(train_examples)

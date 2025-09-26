@@ -14,7 +14,7 @@ from conf_minilm import (
     half,
     use_gtk_cosine,
     count_topk_idx,
-    optim
+    optim,
 )
 from dataset import from_pickle, to_dataset
 from gtk_loss import (
@@ -57,7 +57,7 @@ else:
         batch_size=batch_size,
     )
 train_args = SentenceTransformerTrainingArguments(
-    output_dir="./static_trained_minilm" + ("_gtcs" if use_gtk_cosine else ""),
+    output_dir="./output_minilm" + ("_gtcs" if use_gtk_cosine else ""),
     num_train_epochs=epochs,
     per_device_train_batch_size=batch_size,
     per_device_eval_batch_size=batch_size,
@@ -80,7 +80,7 @@ trainer = SentenceTransformerTrainer(
     evaluator=valid_evaluator,
 )
 trainer.train()
-
+model.save("./trained_static_minilm" + ("_gtcs" if use_gtk_cosine else ""))
 print(valid_evaluator(model))
 if count_topk_idx:
     for k, v in train_loss.idx_counter.items():

@@ -412,21 +412,23 @@ def shuffle_split(
 
 
 def to_req_code_matrix(
-    input_examples: list[InputExample],
+    input_examples: list[list[InputExample]],
 ) -> dict[str, dict[str, float]]:
-    all_code_set = set[str]()
-    result = dict[str, dict[str, float]]()
-    for ie in tqdm(input_examples):
-        all_code_set.add(ie.texts[1])
-    for ie in tqdm(input_examples):
-        if ie.texts[0] not in result:
-            result.setdefault(ie.texts[0], dict[str, float]())
-            for c in all_code_set:
-                result[ie.texts[0]][c] = 0
-    for ie in tqdm(input_examples):
-        result[ie.texts[0]][ie.texts[1]] = ie.label
-    return result
-
+    results = list[dict[str, dict[str, float]]]()
+    for ies in input_examples:
+        all_code_set = set[str]()
+        result = dict[str, dict[str, float]]()
+        for ie in tqdm(ies):
+            all_code_set.add(ie.texts[1])
+        for ie in tqdm(ies):
+            if ie.texts[0] not in result:
+                result.setdefault(ie.texts[0], dict[str, float]())
+                for c in all_code_set:
+                    result[ie.texts[0]][c] = 0
+        for ie in tqdm(ies):
+            result[ie.texts[0]][ie.texts[1]] = ie.label
+        results.append(result)
+    return results
 
 if __name__ == "__main__":
     # data = (
@@ -439,14 +441,14 @@ if __name__ == "__main__":
     # )
     # rcm = to_req_code_matrix(data)
     # print(len(rcm), len(next(iter(rcm.items()))[1]))
-    neg_ratio = 4
+    neg_ratio = 2
     data = (
         load_smos(neg_ratio=neg_ratio)
-        + load_itrust(neg_ratio=neg_ratio)
-        + load_libest_code(neg_ratio=neg_ratio)
-        + load_etour(neg_ratio=neg_ratio)
-        + load_ebt_code(neg_ratio=neg_ratio)
-        + load_albergate(neg_ratio=neg_ratio)
+        # + load_itrust(neg_ratio=neg_ratio)
+        # + load_libest_code(neg_ratio=neg_ratio)
+        # + load_etour(neg_ratio=neg_ratio)
+        # + load_ebt_code(neg_ratio=neg_ratio)
+        # + load_albergate(neg_ratio=neg_ratio)
     )
     train_examples, valid_tuples = shuffle_split(data)
     to_pickle(train_examples, valid_tuples)

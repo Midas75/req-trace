@@ -20,7 +20,7 @@ def clear_files_only(folder_path):
 
 comp = pairwise_gtk_cos_sim if use_gtk_cosine else pairwise_cos_sim
 model = SentenceTransformer(
-    f"trained_dynamic_minilm{'_gtcs' if use_gtk_cosine else ''}",
+    f"static_trained_minilm{'_gtcs' if use_gtk_cosine else ''}/checkpoint-790",
     # f"trained_qwen3/checkpoint-1214",
     # "sentence-transformers/all-MiniLM-L6-v2",
     model_kwargs={
