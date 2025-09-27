@@ -36,8 +36,8 @@ class CosineSimilarityLossFP16(losses.CosineSimilarityLoss):
 def pairwise_gtk_cos_sim(
     a: Tensor, b: Tensor, group_size: int = 16, top_k: int = 4
 ) -> Tensor:
-    a = _convert_to_tensor(np.array(a))
-    b = _convert_to_tensor(np.array(b))
+    a = _convert_to_tensor(a)
+    b = _convert_to_tensor(b)
     assert a.shape == b.shape, "Shape mismatch between a and b"
     batch, hidden_dim = a.size()
     assert (

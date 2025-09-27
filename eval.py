@@ -1,85 +1,136 @@
-from conf_minilm import half, use_gtk_cosine, sim_threshold
-from sentence_transformers import (
-    SentenceTransformer,
-)
-from sentence_transformers.util import pairwise_cos_sim
-from dataset import from_pickle
+from sentence_transformers import SentenceTransformer
 from gtk_loss import pairwise_gtk_cos_sim
+from sentence_transformers.util import pairwise_cos_sim
+from typing import Callable
 from tqdm import tqdm
-from torch import Tensor
-import os
+from numpy import ndarray, array
+from dataset import from_pickle
+from conf_minilm import (
+    sim_threshold,
+    model_name,
+    eval_topk,
+    half,
+    batch_size,
+    use_gtk_cosine,
+)
 
-sim_threshold = sim_threshold
+
+def do_eval(
+    model: SentenceTransformer,
+    batch_size: int,
+    sim_threshold: float,
+    top_k: int,
+    sim_func: Callable[[ndarray, ndarray], float],
+    valid_datasets: list[dict[str, dict[str, float]]],
+) -> tuple[
+    dict[str, int | float], dict[str, int | float], list[dict[str, dict[str, float]]]
+]:
+    model.eval()
+    all_reqs = set[str]()
+    all_codes = set[str]()
+    for valid_dataset in valid_datasets:
+        for req, codes in valid_dataset.items():
+            all_reqs.add(req)
+            for code, label in codes.items():
+                # if label > sim_threshold:
+                all_codes.add(code)
+    all_strs = list(all_reqs) + list(all_codes)
+    all_embs = dict[str, ndarray]()
+    for i in tqdm(range(0, len(all_strs), batch_size), desc="encoding"):
+        strs = all_strs[i : i + batch_size]
+        embs = model.encode(strs, convert_to_numpy=True)
+        for emb_idx, emb in enumerate(embs):
+            all_embs[strs[emb_idx]] = emb
+    model_predicts = []
+    threshold_result: dict[str, int | float] = {
+        "TP": 0,
+        "TN": 0,
+        "FP": 0,
+        "FN": 0,
+        "Accuracy": 0.0,
+        "Precision": 0.0,
+        "Recall": 0.0,
+        "F1": 0.0,
+        "F2": 0.0,
+    }
+    topk_result = threshold_result.copy()
+    for valid_dataset in tqdm(valid_datasets, desc="comparing"):
+        model_predict = dict[str, dict[str, float]]()
+        for req, codes in valid_dataset.items():
+            model_predict[req] = dict[str, float]()
+            req_code_scores = list[tuple[float, str]]()
+            for code, label in codes.items():
+                v = model_predict[req][code] = sim_func(
+                    array([all_embs[req]]), array([all_embs[code]])
+                )
+                req_code_scores.append((float(v), code))
+            req_code_scores = sorted(req_code_scores, key=lambda x: x[0], reverse=True)
+            for i in range(0, len(req_code_scores)):
+                score, code = req_code_scores[i]
+                if code in codes and codes[code] > sim_threshold:
+                    if i < top_k:
+                        topk_result["TP"] += 1
+                    else:
+                        topk_result["FN"] += 1
+                    if score > sim_threshold:
+                        threshold_result["TP"] += 1
+                    else:
+                        threshold_result["FN"] += 1
+                else:
+                    if i < top_k:
+                        topk_result["FP"] += 1
+                    else:
+                        topk_result["TN"] += 1
+                    if score > sim_threshold:
+                        threshold_result["FP"] += 1
+                    else:
+                        threshold_result["TN"] += 1
+        model_predicts.append(model_predict)
+    topk_result["TopK"] = top_k
+    threshold_result["Threshold"] = sim_threshold
+    for result in (topk_result, threshold_result):
+        result["Accuracy"] = (result["TP"] + result["TN"]) / (
+            result["TP"] + result["TN"] + result["FP"] + result["FN"]
+        )
+        result["Precision"] = result["TP"] / (result["TP"] + result["FP"])
+        result["Recall"] = result["TP"] / (result["TP"] + result["FN"])
+        result["F1"] = (
+            2
+            * result["Precision"]
+            * result["Recall"]
+            / (result["Precision"] + result["Recall"])
+        )
+
+        result["F2"] = (
+            (1 + 2**2)
+            * result["Precision"]
+            * result["Recall"]
+            / (2**2 * result["Precision"] + result["Recall"])
+        )
+    return threshold_result, topk_result, model_predicts
 
 
-def clear_files_only(folder_path):
-    for root, dirs, files in os.walk(folder_path):
-        for f in files:
-            os.remove(os.path.join(root, f))
-
-
-comp = pairwise_gtk_cos_sim if use_gtk_cosine else pairwise_cos_sim
-model = SentenceTransformer(
-    f"static_trained_minilm{'_gtcs' if use_gtk_cosine else ''}/checkpoint-790",
-    # f"trained_qwen3/checkpoint-1214",
-    # "sentence-transformers/all-MiniLM-L6-v2",
-    model_kwargs={
-        # "attn_implementation": "flash_attention_2",
-        "dtype": "half" if half else None,
-        # "device_map": "auto",
-    },
-    tokenizer_kwargs={"padding_side": "left"},
-).eval()
-train_examples, valid_tuples = from_pickle()
-true_relevant = 0
-false_relevant = 0
-retrieved = 0
-true_code = 0
-eval_data = dict[str, set[str]]()
-vembs = dict[str, Tensor]()
-for v in tqdm(valid_tuples[1]):
-    vembs[v] = model.encode(v, convert_to_numpy=True)
-for i in range(len(valid_tuples[0])):
-    req = valid_tuples[0][i]
-    code = valid_tuples[1][i]
-    label = valid_tuples[2][i]
-    if req not in eval_data:
-        eval_data[req] = set[str]()
-    if label > 0.5:
-        eval_data[req].add(code)
-false_counter = 0
-clear_files_only("false_case")
-for k, vs in tqdm(eval_data.items()):
-    true_code += len(vs)
-    kemb = model.encode(k, convert_to_numpy=True)
-    vcs = list[tuple[float, str]]()
-    for codek, codeemb in vembs.items():
-        c = float(comp([kemb], [codeemb]))
-        need_save = False
-        if c > sim_threshold and codek in vs:
-            true_relevant += 1
-            retrieved += 1
-        elif c > sim_threshold and codek not in vs:
-            false_relevant += 1
-            false_counter += 1
-            retrieved += 1
-            need_save = True
-        elif c < sim_threshold and codek in vs:
-            false_counter += 1
-            need_save += 1
-        if need_save:
-            f = open(f"false_case/false_{false_counter}.txt", "w")
-            f.write(
-                "does the requirement have relation with the code? Answer me in Chinese\n\n"
-            )
-            f.write(str(c))
-            f.write("\n######################\n")
-            f.write(codek)
-            f.write("\n######################\n" + k)
-precision = true_relevant / retrieved
-recall = true_relevant / true_code
-f1_score = 2 * (precision * recall) / (precision + recall)
-
-print(f"Precision: {true_relevant}/{retrieved} = {precision*100:.2f}%")
-print(f"Recall: {true_relevant}/{true_code} = {recall*100:.2f}%")
-print(f"F1-Score: {f1_score*100:.2f}%")
+if __name__ == "__main__":
+    m = SentenceTransformer(
+        # model_name,
+        "google/embeddinggemma-300m",
+        # f"trained_qwen3/checkpoint-1214",
+        # "sentence-transformers/all-MiniLM-L6-v2",
+        model_kwargs={
+            # "attn_implementation": "flash_attention_2",
+            "dtype": "half" if half else None,
+            # "device_map": "auto",
+        },
+        tokenizer_kwargs={"padding_side": "left"},
+    ).eval()
+    td, od, ie = from_pickle()
+    thr, tkr, mp = do_eval(
+        m,
+        batch_size,
+        sim_threshold,
+        eval_topk,
+        pairwise_gtk_cos_sim if use_gtk_cosine else pairwise_cos_sim,
+        od,
+    )
+    print("Threshold:  ", thr)
+    print("Topk:       ", tkr)

@@ -1,6 +1,6 @@
 from typing import Literal
 
-batch_size = 32
+batch_size = 128
 # model_name = "Qwen/Qwen3-Embedding-0.6B"
 model_name = "sentence-transformers/all-MiniLM-L6-v2"
 epochs = 10
@@ -17,3 +17,4 @@ count_topk_idx = False
 optim: Literal["adamw_torch", "adamw_bnb_8bit"] = "adamw_torch"
 eval_topk = 10
 sim_threshold = 0.5
+dynamic_train = False
